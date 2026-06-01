@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import {
   CheckCircle2, Download, Edit2, FileSpreadsheet, ImageOff,
   Loader2, Package, Plus, ScanLine, Search, Sparkles,
-  Trash2, Upload, X, XCircle,
+  Trash2, Upload, X,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -508,12 +508,7 @@ export default function ProductsPage() {
                     </div>
                   </div>
                 </div>
-              ) : (
-                <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-400">
-                  <XCircle className="h-4 w-4 shrink-0" />
-                  Barcode not found in Open Food Facts — fill details manually.
-                </div>
-              )
+              ) : null
             )}
 
             {/* Name */}

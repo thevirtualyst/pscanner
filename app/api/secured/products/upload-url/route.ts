@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const ext = filename.split(".").pop() ?? "jpg";
     const key = `tenants/${user.tenant_id}/products/${productId}.${ext}`;
     const uploadUrl = await getPresignedUploadUrl(key, contentType, 300);
-    const publicUrl = `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+    const publicUrl = `https://${process.env.SCN_AWS_S3_BUCKET}.s3.${process.env.SCN_AWS_REGION}.amazonaws.com/${key}`;
 
     return Response.json({ success: true, uploadUrl, publicUrl });
   } catch (err) {
