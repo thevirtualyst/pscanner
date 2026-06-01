@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Tenant (Retail Company) ──────────────────────────────────────────────────
+
+model Tenant {
+  id         String   @id @default(uuid())
+  name       String
+  slug       String   @unique
+  status     String   @default("active") // active | suspended | closed
+  plan       String   @default("starter") // starter | growth | enterprise
+  created_on DateTime @default(now())
+
+  branches        Branch[]
+  products        Product[]
+  users           User[]
+  api_keys        ApiKey[]
+  scan_logs       ProductScanLog[]
+}
+
+// ─── Branch ───────────────────────────────────────────────────────────────────
+
+model Branch {
+  id         String   @id @default(uuid())
+  tenant_id  String
+  name       String
+  slug       String
+  address    String?
+  is_active  Boolean  @default(true)
+  created_on DateTime @default(now())
+
+  tenant          Tenant           @relation(fields: [tenant_id], references: [id])
+  branch_products BranchProduct[]
+  scan_logs       ProductScanLog[]
+  api_keys        ApiKey[]
+
+  @@unique([tenant_id, slug])
+}
+
+// ─── Product ──────────────────────────────────────────────────────────────────
+
+model Product {
+  id          String   @id @default(uuid())
+  tenant_id   String
+  barcode     String
+  name        String
+  brand       String?
+  category    String?
+  image_url   String?
+  created_on  DateTime @default(now())
+  updated_on  DateTime @updatedAt
+
+  tenant          Tenant          @relation(fields: [tenant_id], references: [id])
+  branch_products BranchProduct[]
+  scan_logs       ProductScanLog[]
+
+  @@unique([tenant_id, barcode])
+}
+
+// ─── BranchProduct (pricing + stock per branch) ───────────────────────────────
+
+model BranchProduct {
+  id            String   @id @default(uuid())
+  tenant_id     String
+  branch_id     String
+  product_id    String
+  mrp           Decimal  @db.Decimal(10, 2)
+  selling_price Decimal  @db.Decimal(10, 2)
+  offer_price   Decimal? @db.Decimal(10, 2)
+  stock_qty     Int      @default(0)
+  is_active     Boolean  @default(true)
+  updated_on    DateTime @updatedAt
+
+  branch  Branch  @relation(fields: [branch_id], references: [id])
+  product Product @relation(fields: [product_id], references: [id])
+
+  @@unique([branch_id, product_id])
+  @@index([tenant_id, branch_id, product_id])
+}
+
+// ─── API Key (POS integration) ────────────────────────────────────────────────
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  tenant_id   String
+  branch_id   String
+  label       String?
+  key_hash    String    @unique
+  environment String    @default("production") // production | test
+  is_active   Boolean   @default(true)
+  last_used   DateTime?
+  created_on  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id])
+  branch Branch @relation(fields: [branch_id], references: [id])
+}
+
+// ─── ProductScanLog (analytics) ───────────────────────────────────────────────
+
+model ProductScanLog {
+  id          String   @id @default(uuid())
+  tenant_id   String
+  branch_id   String
+  product_id  String
+  device_type String   // PWA | KIOSK
+  scanned_at  DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenant_id], references: [id])
+  branch  Branch  @relation(fields: [branch_id], references: [id])
+  product Product @relation(fields: [product_id], references: [id])
+
+  @@index([tenant_id, branch_id, scanned_at])
+}
+
+// ─── User ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  tenant_id     String
+  email         String   @unique
+  name          String
+  role          String   @default("staff") // super_admin | admin | staff
+  password_hash String
+  is_active     Boolean  @default(true)
+  created_on    DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id])
+}
