@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireAuthenticatedUser(req);
     const body = await req.json();
-    const { barcode, name, brand, category } = body;
+    const { barcode, name, brand, category, alt_names } = body;
 
     if (!barcode?.trim()) return Response.json({ success: false, error: "Barcode is required" }, { status: 400 });
     if (!name?.trim()) return Response.json({ success: false, error: "Name is required" }, { status: 400 });
@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
         name: name.trim(),
         brand: brand?.trim() || null,
         category: category?.trim() || null,
+        alt_names: alt_names || null,
       },
     });
 

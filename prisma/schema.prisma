@@ -7,21 +7,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─── Tenant (Retail Company) ──────────────────────────────────────────────────
+// ─── Tenant ───────────────────────────────────────────────────────────────────
 
 model Tenant {
   id         String   @id @default(uuid())
   name       String
   slug       String   @unique
-  status     String   @default("active") // active | suspended | closed
-  plan       String   @default("starter") // starter | growth | enterprise
+  status     String   @default("active")
+  plan       String   @default("starter")
   created_on DateTime @default(now())
 
-  branches        Branch[]
-  products        Product[]
-  users           User[]
-  api_keys        ApiKey[]
-  scan_logs       ProductScanLog[]
+  branches   Branch[]
+  products   Product[]
+  users      User[]
+  api_keys   ApiKey[]
+  scan_logs  ProductScanLog[]
 }
 
 // ─── Branch ───────────────────────────────────────────────────────────────────
@@ -46,24 +46,73 @@ model Branch {
 // ─── Product ──────────────────────────────────────────────────────────────────
 
 model Product {
-  id          String   @id @default(uuid())
-  tenant_id   String
-  barcode     String
-  name        String
-  brand       String?
-  category    String?
-  image_url   String?
-  created_on  DateTime @default(now())
-  updated_on  DateTime @updatedAt
+  id        String @id @default(uuid())
+  tenant_id String
+  barcode   String
+  name      String
+  brand     String?
+  category  String?
 
-  tenant          Tenant          @relation(fields: [tenant_id], references: [id])
+  // primary image — kept for backward-compat (always mirrors the primary ProductImage url)
+  image_url String?
+
+  // ── Name variants (from barcode lookup — used for suggestion box) ──────────
+  alt_names String? @db.Text  // JSON array: ["Maddur Vade", "Maddur Vade Snack", ...]
+
+  // ── Identification / Packaging ─────────────────────────────────────────────
+  sku           String?   // internal store code
+  weight_volume String?   // e.g. "100g", "500ml"
+  manufacturer  String?   // who makes it (may differ from brand)
+  country_of_origin String?
+
+  // ── Nutrition ──────────────────────────────────────────────────────────────
+  serving_size   String?            // e.g. "Per 100g" or "30g per serving"
+  nutrition_json String? @db.Text   // JSON: { calories, fat, protein, ... }
+  ingredients    String? @db.Text
+  allergens      String?            // e.g. "Contains: milk, nuts, soy"
+
+  // ── Usage & Handling ───────────────────────────────────────────────────────
+  usage_instructions   String? @db.Text
+  storage_instructions String?
+  shelf_life           String?   // e.g. "18 months from manufacture"
+
+  // ── Legal / Compliance ─────────────────────────────────────────────────────
+  disclaimer      String? @db.Text
+  legal_info      String? @db.Text  // FSSAI no., drug license, regulatory text
+  certifications  String?           // e.g. "FSSAI · ISO 9001 · Organic India"
+
+  // ── Discovery ──────────────────────────────────────────────────────────────
+  tags      String?   // comma-separated, for internal search
+  video_url String?   // YouTube link or S3 URL
+
+  created_on DateTime @default(now())
+  updated_on DateTime @updatedAt
+
+  tenant          Tenant           @relation(fields: [tenant_id], references: [id])
   branch_products BranchProduct[]
   scan_logs       ProductScanLog[]
+  images          ProductImage[]
 
   @@unique([tenant_id, barcode])
 }
 
-// ─── BranchProduct (pricing + stock per branch) ───────────────────────────────
+// ─── ProductImage (multiple images per product) ───────────────────────────────
+
+model ProductImage {
+  id         String   @id @default(uuid())
+  product_id String
+  tenant_id  String
+  url        String
+  sort_order Int      @default(0)
+  is_primary Boolean  @default(false)
+  created_on DateTime @default(now())
+
+  product Product @relation(fields: [product_id], references: [id])
+
+  @@index([product_id])
+}
+
+// ─── BranchProduct ────────────────────────────────────────────────────────────
 
 model BranchProduct {
   id            String   @id @default(uuid())
@@ -84,7 +133,7 @@ model BranchProduct {
   @@index([tenant_id, branch_id, product_id])
 }
 
-// ─── API Key (POS integration) ────────────────────────────────────────────────
+// ─── ApiKey ───────────────────────────────────────────────────────────────────
 
 model ApiKey {
   id          String    @id @default(uuid())
@@ -92,7 +141,7 @@ model ApiKey {
   branch_id   String
   label       String?
   key_hash    String    @unique
-  environment String    @default("production") // production | test
+  environment String    @default("production")
   is_active   Boolean   @default(true)
   last_used   DateTime?
   created_on  DateTime  @default(now())
@@ -101,14 +150,14 @@ model ApiKey {
   branch Branch @relation(fields: [branch_id], references: [id])
 }
 
-// ─── ProductScanLog (analytics) ───────────────────────────────────────────────
+// ─── ProductScanLog ───────────────────────────────────────────────────────────
 
 model ProductScanLog {
   id          String   @id @default(uuid())
   tenant_id   String
   branch_id   String
   product_id  String
-  device_type String   // PWA | KIOSK
+  device_type String
   scanned_at  DateTime @default(now())
 
   tenant  Tenant  @relation(fields: [tenant_id], references: [id])
@@ -125,7 +174,7 @@ model User {
   tenant_id     String
   email         String   @unique
   name          String
-  role          String   @default("staff") // super_admin | admin | staff
+  role          String   @default("staff")
   password_hash String
   is_active     Boolean  @default(true)
   created_on    DateTime @default(now())
