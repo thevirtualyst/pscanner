@@ -81,7 +81,7 @@ function formToNutritionJson(form: NutritionForm): string | null {
   const obj: Record<string, number> = {};
   for (const [k, v] of Object.entries(form)) {
     const n = parseFloat(v);
-    if (!isNaN(n)) obj[k] = n;
+    if (!isNaN(n)) obj[k] = Math.round(n * 100) / 100;
   }
   return Object.keys(obj).length ? JSON.stringify(obj) : null;
 }
@@ -797,7 +797,7 @@ export default function ProductModal({ editing, onClose, onSaved }: Props) {
                         <div key={key} className="flex items-center justify-between px-4 py-2.5">
                           <label className="text-sm text-slate-700 w-40 shrink-0">{label}</label>
                           <div className="flex items-center gap-1.5">
-                            <input type="number" min="0" step="0.01"
+                            <input type="number" min="0" step="any"
                               value={nutrition[key]}
                               onChange={(e) => setNutrition((n) => ({ ...n, [key]: e.target.value }))}
                               placeholder="—"

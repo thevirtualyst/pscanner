@@ -50,8 +50,7 @@ function extractImages(product: Record<string, any>): string[] {
       ?? sel[angle]?.display?.[""]
       ?? Object.values(sel[angle]?.display ?? {})[0];
     if (display) {
-      // display value is like "front_en.3.400.jpg" — build full URL
-      urls.push(`${base}/${barcodePath}/${display}`);
+      urls.push(display.startsWith("http") ? display : `${base}/${barcodePath}/${display}`);
     } else {
       // Fallback: try image_front_url etc.
       const fallback =
