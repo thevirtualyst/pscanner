@@ -34,8 +34,6 @@ type ScannedProduct = {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-// Physical scanners emit each keystroke within ~30ms; humans type much slower.
-const SCANNER_MAX_INTERVAL_MS = 50;
 const AUTO_RESET_SECONDS = 30;
 
 const AVAILABILITY: Record<Availability, { label: string; cls: string; dot: string }> = {
@@ -386,8 +384,7 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
   const [countdown, setCountdown] = useState(AUTO_RESET_SECONDS);
   const [canInstall, setCanInstall] = useState(false);
 
-  const bufferRef      = useRef("");
-  const lastKeyTimeRef = useRef(0);
+  const bufferRef = useRef("");
   const countdownRef   = useRef<ReturnType<typeof setInterval>>();
   const installPromptRef = useRef<any>(null);
 
@@ -440,26 +437,15 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
   // Physical scanner keyboard listener
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      // Only handle printable single characters and Enter
       if (e.key.length > 1 && e.key !== "Enter") return;
-      // Ignore if user is focused on an input/textarea
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-
-      const now = Date.now();
-      const gap = now - lastKeyTimeRef.current;
-      lastKeyTimeRef.current = now;
 
       if (e.key === "Enter") {
         const barcode = bufferRef.current.trim();
         bufferRef.current = "";
-        if (barcode.length >= 4) fetchProduct(barcode);
+        if (barcode.length >= 1) fetchProduct(barcode);
         return;
-      }
-
-      // If gap is too large (human typing speed), reset the buffer
-      if (gap > SCANNER_MAX_INTERVAL_MS && bufferRef.current.length > 0) {
-        bufferRef.current = "";
       }
 
       bufferRef.current += e.key;
