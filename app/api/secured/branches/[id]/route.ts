@@ -21,7 +21,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const user = await requireAuthenticatedUser(req);
     const body = await req.json();
-    const { name, address, is_active } = body;
+    const {
+      name, address, is_active,
+      kiosk_logo_url, kiosk_video_url, kiosk_headline,
+      kiosk_subtitle, kiosk_cta_text, kiosk_accent_color,
+    } = body;
 
     const existing = await prisma.branch.findFirst({
       where: { id, tenant_id: user.tenant_id! },
@@ -31,9 +35,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const branch = await prisma.branch.update({
       where: { id },
       data: {
-        ...(name !== undefined && { name: name.trim() }),
-        ...(address !== undefined && { address: address?.trim() || null }),
-        ...(is_active !== undefined && { is_active }),
+        ...(name       !== undefined && { name: name.trim() }),
+        ...(address    !== undefined && { address: address?.trim() || null }),
+        ...(is_active  !== undefined && { is_active }),
+        ...(kiosk_logo_url     !== undefined && { kiosk_logo_url:     kiosk_logo_url?.trim()     || null }),
+        ...(kiosk_video_url    !== undefined && { kiosk_video_url:    kiosk_video_url?.trim()    || null }),
+        ...(kiosk_headline     !== undefined && { kiosk_headline:     kiosk_headline?.trim()     || null }),
+        ...(kiosk_subtitle     !== undefined && { kiosk_subtitle:     kiosk_subtitle?.trim()     || null }),
+        ...(kiosk_cta_text     !== undefined && { kiosk_cta_text:     kiosk_cta_text?.trim()     || null }),
+        ...(kiosk_accent_color !== undefined && { kiosk_accent_color: kiosk_accent_color?.trim() || null }),
       },
     });
 

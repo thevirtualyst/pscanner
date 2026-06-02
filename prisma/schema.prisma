@@ -35,6 +35,14 @@ model Branch {
   is_active  Boolean  @default(true)
   created_on DateTime @default(now())
 
+  // ── Kiosk idle screen config ──────────────────────────────────────────────
+  kiosk_logo_url     String?
+  kiosk_video_url    String?
+  kiosk_headline     String?
+  kiosk_subtitle     String?
+  kiosk_cta_text     String?
+  kiosk_accent_color String?
+
   tenant          Tenant           @relation(fields: [tenant_id], references: [id])
   branch_products BranchProduct[]
   scan_logs       ProductScanLog[]

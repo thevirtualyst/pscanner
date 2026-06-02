@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2, Edit2, Loader2, Plus, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
+import { Building2, Edit2, Loader2, Monitor, Plus, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
 
 type Branch = {
   id: string;
@@ -10,10 +10,30 @@ type Branch = {
   address: string | null;
   is_active: boolean;
   created_on: string;
+  kiosk_logo_url: string | null;
+  kiosk_video_url: string | null;
+  kiosk_headline: string | null;
+  kiosk_subtitle: string | null;
+  kiosk_cta_text: string | null;
+  kiosk_accent_color: string | null;
 };
 
 type FormState = { name: string; address: string };
 const EMPTY_FORM: FormState = { name: "", address: "" };
+
+type KioskForm = {
+  kiosk_logo_url: string;
+  kiosk_video_url: string;
+  kiosk_headline: string;
+  kiosk_subtitle: string;
+  kiosk_cta_text: string;
+  kiosk_accent_color: string;
+};
+const EMPTY_KIOSK: KioskForm = {
+  kiosk_logo_url: "", kiosk_video_url: "",
+  kiosk_headline: "", kiosk_subtitle: "",
+  kiosk_cta_text: "", kiosk_accent_color: "#2563eb",
+};
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
@@ -98,6 +118,12 @@ export default function BranchesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Branch | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Kiosk config
+  const [kioskTarget, setKioskTarget] = useState<Branch | null>(null);
+  const [kioskForm, setKioskForm] = useState<KioskForm>(EMPTY_KIOSK);
+  const [kioskSaving, setKioskSaving] = useState(false);
+  const [kioskError, setKioskError] = useState("");
+
   const fetchBranches = useCallback(async () => {
     setLoading(true);
     const res = await fetch("/api/secured/branches", { credentials: "include" });
@@ -162,6 +188,42 @@ export default function BranchesPage() {
       body: JSON.stringify({ is_active: !branch.is_active }),
     });
     fetchBranches();
+  }
+
+  function openKiosk(branch: Branch) {
+    setKioskTarget(branch);
+    setKioskForm({
+      kiosk_logo_url:     branch.kiosk_logo_url     ?? "",
+      kiosk_video_url:    branch.kiosk_video_url     ?? "",
+      kiosk_headline:     branch.kiosk_headline      ?? "",
+      kiosk_subtitle:     branch.kiosk_subtitle      ?? "",
+      kiosk_cta_text:     branch.kiosk_cta_text      ?? "",
+      kiosk_accent_color: branch.kiosk_accent_color  ?? "#2563eb",
+    });
+    setKioskError("");
+  }
+
+  async function handleKioskSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!kioskTarget) return;
+    setKioskSaving(true); setKioskError("");
+    const res = await fetch(`/api/secured/branches/${kioskTarget.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        kiosk_logo_url:     kioskForm.kiosk_logo_url     || null,
+        kiosk_video_url:    kioskForm.kiosk_video_url     || null,
+        kiosk_headline:     kioskForm.kiosk_headline      || null,
+        kiosk_subtitle:     kioskForm.kiosk_subtitle      || null,
+        kiosk_cta_text:     kioskForm.kiosk_cta_text      || null,
+        kiosk_accent_color: kioskForm.kiosk_accent_color  || null,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) { setKioskError(data.error ?? "Something went wrong"); }
+    else { setKioskTarget(null); fetchBranches(); }
+    setKioskSaving(false);
   }
 
   async function handleDelete() {
@@ -255,6 +317,14 @@ export default function BranchesPage() {
                       </button>
                       <button
                         type="button"
+                        onClick={() => openKiosk(branch)}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-blue-600"
+                        title="Kiosk settings"
+                      >
+                        <Monitor className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleToggleActive(branch)}
                         className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                         title={branch.is_active ? "Deactivate" : "Activate"}
@@ -325,6 +395,83 @@ export default function BranchesPage() {
               >
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 {editing ? "Save changes" : "Create branch"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Kiosk config modal */}
+      {kioskTarget && (
+        <Modal title={`Kiosk settings — ${kioskTarget.name}`} onClose={() => setKioskTarget(null)}>
+          <form onSubmit={handleKioskSave} className="space-y-4">
+            {kioskError && (
+              <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{kioskError}</p>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Logo URL</label>
+              <input type="url" value={kioskForm.kiosk_logo_url}
+                onChange={(e) => setKioskForm((f) => ({ ...f, kiosk_logo_url: e.target.value }))}
+                placeholder="https://example.com/logo.png"
+                className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100" />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Background video URL</label>
+              <input type="url" value={kioskForm.kiosk_video_url}
+                onChange={(e) => setKioskForm((f) => ({ ...f, kiosk_video_url: e.target.value }))}
+                placeholder="https://example.com/promo.mp4"
+                className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100" />
+              <p className="text-xs text-slate-400">MP4 recommended. Plays silently and loops behind the idle screen.</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Headline</label>
+              <input type="text" value={kioskForm.kiosk_headline}
+                onChange={(e) => setKioskForm((f) => ({ ...f, kiosk_headline: e.target.value }))}
+                placeholder={`Default: ${kioskTarget.name}`}
+                className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100" />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Subtitle</label>
+              <input type="text" value={kioskForm.kiosk_subtitle}
+                onChange={(e) => setKioskForm((f) => ({ ...f, kiosk_subtitle: e.target.value }))}
+                placeholder="e.g. Your neighbourhood supermarket"
+                className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100" />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Call-to-action text</label>
+              <input type="text" value={kioskForm.kiosk_cta_text}
+                onChange={(e) => setKioskForm((f) => ({ ...f, kiosk_cta_text: e.target.value }))}
+                placeholder="Default: Place product under the scanner"
+                className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100" />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Accent color</label>
+              <div className="flex items-center gap-3">
+                <input type="color" value={kioskForm.kiosk_accent_color}
+                  onChange={(e) => setKioskForm((f) => ({ ...f, kiosk_accent_color: e.target.value }))}
+                  className="h-11 w-16 cursor-pointer rounded-xl border border-slate-200 p-1" />
+                <input type="text" value={kioskForm.kiosk_accent_color}
+                  onChange={(e) => setKioskForm((f) => ({ ...f, kiosk_accent_color: e.target.value }))}
+                  placeholder="#2563eb"
+                  className="h-11 flex-1 rounded-xl border border-slate-200 px-4 text-sm font-mono outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100" />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-1">
+              <button type="button" onClick={() => setKioskTarget(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button type="submit" disabled={kioskSaving}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
+                {kioskSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save kiosk settings
               </button>
             </div>
           </form>
