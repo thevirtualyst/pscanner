@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
   AlertCircle, ArrowLeft, ChevronLeft, ChevronRight,
-  Loader2, Package, Play, ScanLine, XCircle,
+  Download, Loader2, Package, Play, ScanLine, XCircle,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -309,8 +309,9 @@ type KioskConfig = {
   accentColor: string | null | undefined;
 };
 
-function IdleScreen({ storeName, branchName, config }: {
+function IdleScreen({ storeName, branchName, config, onInstall, canInstall }: {
   storeName: string; branchName: string; config: KioskConfig;
+  canInstall: boolean; onInstall: () => void;
 }) {
   const accent  = config.accentColor || "#2563eb";
   const headline = config.headline   || storeName;
@@ -359,6 +360,15 @@ function IdleScreen({ storeName, branchName, config }: {
           <p className="text-lg font-semibold text-white">{cta}</p>
           <p className="mt-1 text-sm text-white/60">Product details will appear automatically</p>
         </div>
+
+        {/* Install prompt — only shown when browser supports it and app isn't installed yet */}
+        {canInstall && (
+          <button type="button" onClick={onInstall}
+            className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm text-white/70 backdrop-blur-sm hover:bg-white/20 transition">
+            <Download className="h-4 w-4" />
+            Install as app
+          </button>
+        )}
       </div>
     </div>
   );
@@ -374,10 +384,12 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
   const [notFound, setNotFound] = useState(false);
   const [apiError, setApiError] = useState("");
   const [countdown, setCountdown] = useState(AUTO_RESET_SECONDS);
+  const [canInstall, setCanInstall] = useState(false);
 
   const bufferRef      = useRef("");
   const lastKeyTimeRef = useRef(0);
   const countdownRef   = useRef<ReturnType<typeof setInterval>>();
+  const installPromptRef = useRef<any>(null);
 
   function reset() {
     setProduct(null); setNotFound(false); setApiError(""); setScanning(false);
@@ -401,6 +413,29 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
       setScanning(false);
     }
   }, [branchId]);
+
+  // Register service worker + listen for PWA install prompt
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/kiosk-sw.js", { scope: "/" }).catch(() => {});
+    }
+    const onPrompt = (e: Event) => {
+      e.preventDefault();
+      installPromptRef.current = e;
+      setCanInstall(true);
+    };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", () => setCanInstall(false));
+    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
+  }, []);
+
+  async function handleInstall() {
+    if (!installPromptRef.current) return;
+    installPromptRef.current.prompt();
+    await installPromptRef.current.userChoice;
+    installPromptRef.current = null;
+    setCanInstall(false);
+  }
 
   // Physical scanner keyboard listener
   useEffect(() => {
@@ -484,5 +519,5 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
     </div>
   );
 
-  return <IdleScreen storeName={storeName} branchName={branchName} config={kioskConfig} />;
+  return <IdleScreen storeName={storeName} branchName={branchName} config={kioskConfig} canInstall={canInstall} onInstall={handleInstall} />;
 }

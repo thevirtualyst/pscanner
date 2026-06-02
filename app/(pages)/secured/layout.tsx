@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Monitor,
   Package,
   Settings,
   Tag,
@@ -39,6 +40,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { icon: Building2, label: "Branches", path: "/secured/branches" },
       { icon: Package, label: "Products", path: "/secured/products" },
       { icon: Tag, label: "Pricing", path: "/secured/pricing" },
+      { icon: Monitor, label: "Kiosk Setup", path: "/secured/kiosk-setup" },
     ],
   },
   {

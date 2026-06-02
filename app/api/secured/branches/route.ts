@@ -9,11 +9,17 @@ function slugify(text: string) {
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuthenticatedUser(req);
-    const branches = await prisma.branch.findMany({
-      where: { tenant_id: user.tenant_id! },
-      orderBy: { created_on: "asc" },
-    });
-    return Response.json({ success: true, branches });
+    const [branches, tenant] = await Promise.all([
+      prisma.branch.findMany({
+        where: { tenant_id: user.tenant_id! },
+        orderBy: { created_on: "asc" },
+      }),
+      prisma.tenant.findUnique({
+        where: { id: user.tenant_id! },
+        select: { slug: true },
+      }),
+    ]);
+    return Response.json({ success: true, branches, store_slug: tenant?.slug ?? "" });
   } catch (err) {
     return authErrorResponse(err);
   }
