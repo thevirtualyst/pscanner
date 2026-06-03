@@ -372,6 +372,55 @@ function IdleScreen({ storeName, branchName, config, onInstall, canInstall }: {
   );
 }
 
+// Capture install prompt as early as possible — before React hydrates
+let _installPrompt: any = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); _installPrompt = e; });
+}
+
+// ─── Debug panel ─────────────────────────────────────────────────────────────
+
+function DebugPanel({ log, onClear }: { log: string[]; onClear: () => void }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [log]);
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t-2 border-slate-300 font-mono">
+      <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+        <span className="text-sm font-bold text-slate-800">DEBUG — {log.length} lines</span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="rounded bg-red-500 px-3 py-1 text-sm font-bold text-white"
+        >
+          Clear
+        </button>
+      </div>
+      <div className="max-h-56 overflow-y-auto px-3 py-2 space-y-0.5">
+        {log.length === 0 && <p className="text-sm text-slate-400">No events yet — scan something</p>}
+        {log.map((line, i) => (
+          <p
+            key={i}
+            className={`text-sm leading-relaxed ${
+              line.startsWith("──")    ? "text-slate-400" :
+              line.startsWith(">>>")   ? "text-blue-700 font-bold" :
+              line.startsWith("SKIP")  ? "text-slate-400" :
+              line.startsWith("ENTER") ? "text-green-700 font-bold" :
+              "text-slate-800"
+            }`}
+          >
+            {line}
+          </p>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
 // ─── Kiosk root ───────────────────────────────────────────────────────────────
 
 export default function KioskPWA({ branchId, branchName, storeName, kioskConfig }: {
@@ -383,10 +432,18 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
   const [apiError, setApiError] = useState("");
   const [countdown, setCountdown] = useState(AUTO_RESET_SECONDS);
   const [canInstall, setCanInstall] = useState(false);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const [debugMode, setDebugMode] = useState(false);
 
-  const bufferRef = useRef("");
-  const countdownRef   = useRef<ReturnType<typeof setInterval>>();
+  useEffect(() => {
+    setDebugMode(new URLSearchParams(window.location.search).has("debug"));
+  }, []);
+
+  const bufferRef        = useRef("");
+  const countdownRef     = useRef<ReturnType<typeof setInterval>>();
   const installPromptRef = useRef<any>(null);
+  const hiddenInputRef   = useRef<HTMLInputElement>(null);
+  const scanTimerRef     = useRef<ReturnType<typeof setTimeout>>();
 
   function reset() {
     setProduct(null); setNotFound(false); setApiError(""); setScanning(false);
@@ -411,18 +468,24 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
     }
   }, [branchId]);
 
-  // Register service worker + listen for PWA install prompt
+  // Register service worker + sync install prompt state
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/kiosk-sw.js", { scope: "/" }).catch(() => {});
     }
+    // Pick up the prompt if it already fired before React mounted
+    if (_installPrompt) {
+      installPromptRef.current = _installPrompt;
+      setCanInstall(true);
+    }
     const onPrompt = (e: Event) => {
       e.preventDefault();
+      _installPrompt = e;
       installPromptRef.current = e;
       setCanInstall(true);
     };
     window.addEventListener("beforeinstallprompt", onPrompt);
-    window.addEventListener("appinstalled", () => setCanInstall(false));
+    window.addEventListener("appinstalled", () => { _installPrompt = null; setCanInstall(false); });
     return () => window.removeEventListener("beforeinstallprompt", onPrompt);
   }, []);
 
@@ -434,26 +497,68 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
     setCanInstall(false);
   }
 
+  // Keep hidden input focused so Android scanner input lands in it
+  useEffect(() => {
+    const input = hiddenInputRef.current;
+    if (!input) return;
+    input.focus();
+    const refocus = () => setTimeout(() => input.focus(), 50);
+    input.addEventListener("blur", refocus);
+    return () => input.removeEventListener("blur", refocus);
+  }, []);
+
+  function submitBarcode(raw: string) {
+    const barcode = raw.trim().replace(/[\n\r]/g, "");
+    if (debugMode) setDebugLog((l) => [...l, `>>> SUBMIT "${barcode}" len=${barcode.length}`]);
+    if (barcode.length >= 3) fetchProduct(barcode);
+  }
+
   // Physical scanner keyboard listener
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key.length > 1 && e.key !== "Enter") return;
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      // Add separator at the start of each new scan (first key after buffer was empty)
+      if (debugMode && bufferRef.current === "") {
+        setDebugLog((l) => [...l, `──── scan ────`]);
+      }
 
-      if (e.key === "Enter") {
+      // Enter — submit whatever is in the buffer
+      if (e.key === "Enter" || e.keyCode === 13) {
+        clearTimeout(scanTimerRef.current);
         const barcode = bufferRef.current.trim();
         bufferRef.current = "";
-        if (barcode.length >= 1) fetchProduct(barcode);
+        if (debugMode) setDebugLog((l) => [...l, `ENTER → buf="${barcode}"`]);
+        submitBarcode(barcode);
         return;
       }
 
-      bufferRef.current += e.key;
+      // Readable character (desktop / some scanners)
+      if (e.key.length === 1 && e.key !== "Unidentified") {
+        bufferRef.current += e.key;
+        if (debugMode) setDebugLog((l) => [...l, `key="${e.key}" buf="${bufferRef.current}"`]);
+        return;
+      }
+
+      // Android "Unidentified" — reconstruct char from keyCode
+      let char = "";
+      if (e.keyCode >= 48 && e.keyCode <= 57) {
+        char = String(e.keyCode - 48);
+      } else if (e.keyCode >= 96 && e.keyCode <= 105) {
+        char = String(e.keyCode - 96);
+      } else if (e.keyCode >= 65 && e.keyCode <= 90) {
+        char = String.fromCharCode(e.keyCode);
+      }
+
+      if (char) {
+        bufferRef.current += char;
+        if (debugMode) setDebugLog((l) => [...l, `kc=${e.keyCode} → "${char}" buf="${bufferRef.current}"`]);
+      } else {
+        if (debugMode) setDebugLog((l) => [...l, `SKIP key="${e.key}" kc=${e.keyCode}`]);
+      }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [fetchProduct]);
+  }, [fetchProduct, debugMode]);
 
   // Auto-reset countdown when product is displayed
   useEffect(() => {
@@ -505,5 +610,52 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
     </div>
   );
 
-  return <IdleScreen storeName={storeName} branchName={branchName} config={kioskConfig} canInstall={canInstall} onInstall={handleInstall} />;
+  return (
+    <>
+      {/* Captures Android scanner input — inputMode="none" prevents soft keyboard */}
+      <input
+        ref={hiddenInputRef}
+        inputMode="none"
+        aria-hidden="true"
+        style={{ position: "fixed", opacity: 0, top: 0, left: 0, width: 1, height: 1, pointerEvents: "none", zIndex: -1 }}
+        onKeyDown={(e) => {
+          const curVal = e.currentTarget.value;
+          if (debugMode) setDebugLog((l) => [`[input] key="${e.key}" keyCode=${e.keyCode} val="${curVal}"`, ...l].slice(0, 12));
+          // Catch Enter — Zebra sends keyCode=13 but key may be "Unidentified"
+          if (e.key === "Enter" || e.keyCode === 13 || e.which === 13) {
+            clearTimeout(scanTimerRef.current);
+            const val = e.currentTarget.value;
+            e.currentTarget.value = "";
+            submitBarcode(val);
+          }
+        }}
+        onInput={(e) => {
+          const val = (e.currentTarget as HTMLInputElement).value;
+          if (debugMode) setDebugLog((l) => [`[input event] val="${val}"`, ...l].slice(0, 12));
+          // Some scanners append \n or \r instead of firing Enter key
+          if (val.includes("\n") || val.includes("\r")) {
+            clearTimeout(scanTimerRef.current);
+            const barcode = val.replace(/[\n\r]/g, "");
+            (e.target as HTMLInputElement).value = "";
+            submitBarcode(barcode);
+            return;
+          }
+          // Debounce fallback: submit 300ms after last character
+          // handles scanners with no Enter/newline terminator
+          clearTimeout(scanTimerRef.current);
+          scanTimerRef.current = setTimeout(() => {
+            const input = hiddenInputRef.current;
+            if (!input?.value) return;
+            const barcode = input.value;
+            input.value = "";
+            submitBarcode(barcode);
+          }, 300);
+        }}
+      />
+      <IdleScreen storeName={storeName} branchName={branchName} config={kioskConfig} canInstall={canInstall} onInstall={handleInstall} />
+      {debugMode && (
+        <DebugPanel log={debugLog} onClear={() => setDebugLog([])} />
+      )}
+    </>
+  );
 }

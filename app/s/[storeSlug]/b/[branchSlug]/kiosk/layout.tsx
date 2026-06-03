@@ -8,7 +8,7 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { storeSlug, branchSlug } = await params;
   return {
-    manifest: `/s/${storeSlug}/b/${branchSlug}/kiosk/manifest.webmanifest`,
+    manifest: `/api/kiosk-manifest?store=${storeSlug}&branch=${branchSlug}`,
     appleWebApp: {
       capable: true,
       statusBarStyle: "black-translucent",
