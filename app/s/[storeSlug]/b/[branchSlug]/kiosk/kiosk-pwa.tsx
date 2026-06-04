@@ -497,14 +497,23 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
     setCanInstall(false);
   }
 
-  // Keep hidden input focused so Android scanner input lands in it
+  // Keep hidden input focused so Android scanner input lands in it.
+  // Call blur() immediately on focus to suppress soft keyboard,
+  // then re-focus so DataWedge can still inject via InputConnection.
   useEffect(() => {
     const input = hiddenInputRef.current;
     if (!input) return;
     input.focus();
     const refocus = () => setTimeout(() => input.focus(), 50);
     input.addEventListener("blur", refocus);
-    return () => input.removeEventListener("blur", refocus);
+    // Suppress soft keyboard by blurring on touchstart (user tap)
+    // but keep focus for hardware scanner injection
+    const suppressKeyboard = () => { input.blur(); setTimeout(() => input.focus(), 100); };
+    window.addEventListener("touchstart", suppressKeyboard);
+    return () => {
+      input.removeEventListener("blur", refocus);
+      window.removeEventListener("touchstart", suppressKeyboard);
+    };
   }, []);
 
   function submitBarcode(raw: string) {
@@ -615,8 +624,8 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
       {/* Captures Android scanner input — inputMode="none" prevents soft keyboard */}
       <input
         ref={hiddenInputRef}
-        inputMode="none"
         aria-hidden="true"
+        readOnly={false}
         style={{ position: "fixed", opacity: 0, top: 0, left: 0, width: 1, height: 1, pointerEvents: "none", zIndex: -1 }}
         onKeyDown={(e) => {
           const curVal = e.currentTarget.value;

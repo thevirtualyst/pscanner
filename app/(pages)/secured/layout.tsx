@@ -12,6 +12,7 @@ import {
   Menu,
   Monitor,
   Package,
+  QrCode,
   Settings,
   Tag,
   Users,
@@ -41,6 +42,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { icon: Package, label: "Products", path: "/secured/products" },
       { icon: Tag, label: "Pricing", path: "/secured/pricing" },
       { icon: Monitor, label: "Kiosk Setup", path: "/secured/kiosk-setup" },
+      { icon: QrCode,  label: "Barcode Test", path: "/secured/barcode-test" },
     ],
   },
   {
