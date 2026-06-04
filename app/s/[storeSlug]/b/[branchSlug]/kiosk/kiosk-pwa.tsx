@@ -34,7 +34,7 @@ type ScannedProduct = {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const AUTO_RESET_SECONDS = 30;
+const AUTO_RESET_SECONDS = 5;
 
 const AVAILABILITY: Record<Availability, { label: string; cls: string; dot: string }> = {
   AVAILABLE:    { label: "Available",            cls: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
@@ -440,14 +440,20 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
   }, []);
 
   const bufferRef        = useRef("");
-  const countdownRef     = useRef<ReturnType<typeof setInterval>>();
+  const countdownRef     = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const installPromptRef = useRef<any>(null);
   const hiddenInputRef   = useRef<HTMLInputElement>(null);
-  const scanTimerRef     = useRef<ReturnType<typeof setTimeout>>();
+  const scanTimerRef     = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   function reset() {
     setProduct(null); setNotFound(false); setApiError(""); setScanning(false);
     clearInterval(countdownRef.current);
+    clearTimeout(scanTimerRef.current);
+    bufferRef.current = "";
+    if (hiddenInputRef.current) {
+      hiddenInputRef.current.value = "";
+      hiddenInputRef.current.focus();
+    }
   }
 
   const fetchProduct = useCallback(async (barcode: string) => {
@@ -582,46 +588,11 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
     return () => clearInterval(countdownRef.current);
   }, [product]);
 
-  if (scanning) return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50">
-      <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
-      <p className="text-base font-medium text-slate-500">Looking up product...</p>
-    </div>
-  );
-
-  if (product) return (
-    <ProductCard product={product} onDismiss={reset} countdown={countdown} />
-  );
-
-  if (notFound || apiError) return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm space-y-5 text-center">
-        {notFound
-          ? <><XCircle className="mx-auto h-20 w-20 text-slate-300" />
-              <div>
-                <p className="text-xl font-bold text-slate-900">Product not found</p>
-                <p className="mt-1 text-sm text-slate-500">
-                  This product isn't available in {branchName} yet.
-                </p>
-              </div></>
-          : <><AlertCircle className="mx-auto h-20 w-20 text-red-300" />
-              <div>
-                <p className="text-xl font-bold text-slate-900">Something went wrong</p>
-                <p className="mt-1 text-sm text-slate-500">{apiError}</p>
-              </div></>
-        }
-        <p className="text-sm text-slate-400">Scan another product to continue</p>
-        <button type="button" onClick={reset}
-          className="text-sm text-slate-400 underline hover:text-slate-600">
-          Back to idle
-        </button>
-      </div>
-    </div>
-  );
+  const showIdle = !scanning && !product && !notFound && !apiError;
 
   return (
     <>
-      {/* Captures Android scanner input — inputMode="none" prevents soft keyboard */}
+      {/* Always in DOM — never unmounts so focus/blur listeners stay live across all screens */}
       <input
         ref={hiddenInputRef}
         aria-hidden="true"
@@ -630,7 +601,6 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
         onKeyDown={(e) => {
           const curVal = e.currentTarget.value;
           if (debugMode) setDebugLog((l) => [`[input] key="${e.key}" keyCode=${e.keyCode} val="${curVal}"`, ...l].slice(0, 12));
-          // Catch Enter — Zebra sends keyCode=13 but key may be "Unidentified"
           if (e.key === "Enter" || e.keyCode === 13 || e.which === 13) {
             clearTimeout(scanTimerRef.current);
             const val = e.currentTarget.value;
@@ -641,7 +611,6 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
         onInput={(e) => {
           const val = (e.currentTarget as HTMLInputElement).value;
           if (debugMode) setDebugLog((l) => [`[input event] val="${val}"`, ...l].slice(0, 12));
-          // Some scanners append \n or \r instead of firing Enter key
           if (val.includes("\n") || val.includes("\r")) {
             clearTimeout(scanTimerRef.current);
             const barcode = val.replace(/[\n\r]/g, "");
@@ -649,8 +618,6 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
             submitBarcode(barcode);
             return;
           }
-          // Debounce fallback: submit 300ms after last character
-          // handles scanners with no Enter/newline terminator
           clearTimeout(scanTimerRef.current);
           scanTimerRef.current = setTimeout(() => {
             const input = hiddenInputRef.current;
@@ -661,9 +628,49 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
           }, 300);
         }}
       />
-      <IdleScreen storeName={storeName} branchName={branchName} config={kioskConfig} canInstall={canInstall} onInstall={handleInstall} />
-      {debugMode && (
-        <DebugPanel log={debugLog} onClear={() => setDebugLog([])} />
+
+      {scanning && (
+        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50">
+          <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
+          <p className="text-base font-medium text-slate-500">Looking up product...</p>
+        </div>
+      )}
+
+      {product && (
+        <ProductCard product={product} onDismiss={reset} countdown={countdown} />
+      )}
+
+      {(notFound || apiError) && (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4">
+          <div className="w-full max-w-sm space-y-5 text-center">
+            {notFound
+              ? <><XCircle className="mx-auto h-20 w-20 text-slate-300" />
+                  <div>
+                    <p className="text-xl font-bold text-slate-900">Product not found</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      This product isn&apos;t available in {branchName} yet.
+                    </p>
+                  </div></>
+              : <><AlertCircle className="mx-auto h-20 w-20 text-red-300" />
+                  <div>
+                    <p className="text-xl font-bold text-slate-900">Something went wrong</p>
+                    <p className="mt-1 text-sm text-slate-500">{apiError}</p>
+                  </div></>
+            }
+            <p className="text-sm text-slate-400">Scan another product to continue</p>
+            <button type="button" onClick={reset}
+              className="text-sm text-slate-400 underline hover:text-slate-600">
+              Back to idle
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showIdle && (
+        <>
+          <IdleScreen storeName={storeName} branchName={branchName} config={kioskConfig} canInstall={canInstall} onInstall={handleInstall} />
+          {debugMode && <DebugPanel log={debugLog} onClear={() => setDebugLog([])} />}
+        </>
       )}
     </>
   );

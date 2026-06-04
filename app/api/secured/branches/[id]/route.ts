@@ -22,7 +22,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const user = await requireAuthenticatedUser(req);
     const body = await req.json();
     const {
-      name, address, is_active,
+      name, address, latitude, longitude, is_active,
       kiosk_logo_url, kiosk_video_url, kiosk_headline,
       kiosk_subtitle, kiosk_cta_text, kiosk_accent_color,
     } = body;
@@ -37,6 +37,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       data: {
         ...(name       !== undefined && { name: name.trim() }),
         ...(address    !== undefined && { address: address?.trim() || null }),
+        ...(latitude   !== undefined && { latitude:  latitude  != null ? Number(latitude)  : null }),
+        ...(longitude  !== undefined && { longitude: longitude != null ? Number(longitude) : null }),
         ...(is_active  !== undefined && { is_active }),
         ...(kiosk_logo_url     !== undefined && { kiosk_logo_url:     kiosk_logo_url?.trim()     || null }),
         ...(kiosk_video_url    !== undefined && { kiosk_video_url:    kiosk_video_url?.trim()    || null }),

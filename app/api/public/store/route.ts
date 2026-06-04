@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
       status: true,
       branches: {
         where: { is_active: true },
-        select: { id: true, name: true, slug: true, address: true },
+        select: { id: true, name: true, slug: true, address: true, latitude: true, longitude: true },
         orderBy: { name: "asc" },
       },
     },

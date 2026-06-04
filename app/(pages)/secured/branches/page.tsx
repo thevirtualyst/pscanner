@@ -1,13 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Building2, Edit2, ImageIcon, Loader2, Monitor, Plus, Trash2, ToggleLeft, ToggleRight, Upload, X } from "lucide-react";
+import {
+  Building2, Download, Edit2, Loader2, Monitor, Plus,
+  QrCode, Trash2, ToggleLeft, ToggleRight, Upload, X,
+} from "lucide-react";
 
 type Branch = {
   id: string;
   name: string;
   slug: string;
   address: string | null;
+  latitude: number | null;
+  longitude: number | null;
   is_active: boolean;
   created_on: string;
   kiosk_logo_url: string | null;
@@ -18,8 +23,8 @@ type Branch = {
   kiosk_accent_color: string | null;
 };
 
-type FormState = { name: string; address: string };
-const EMPTY_FORM: FormState = { name: "", address: "" };
+type FormState = { name: string; address: string; latitude: string; longitude: string };
+const EMPTY_FORM: FormState = { name: "", address: "", latitude: "", longitude: "" };
 
 type KioskForm = {
   kiosk_logo_url: string;
@@ -41,14 +46,16 @@ function Modal({
   title,
   onClose,
   children,
+  wide,
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  wide?: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+      <div className={`w-full ${wide ? "max-w-lg" : "max-w-md"} rounded-2xl bg-white shadow-2xl`}>
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <h2 className="text-base font-semibold text-slate-900">{title}</h2>
           <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:text-slate-600">
@@ -105,6 +112,7 @@ function ConfirmDialog({
 
 export default function BranchesPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [storeSlug, setStoreSlug] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -126,11 +134,17 @@ export default function BranchesPage() {
   const [logoUploading, setLogoUploading] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
+  // QR download
+  const [qrLoading, setQrLoading] = useState<string | null>(null);
+
   const fetchBranches = useCallback(async () => {
     setLoading(true);
     const res = await fetch("/api/secured/branches", { credentials: "include" });
     const data = await res.json();
-    if (data.success) setBranches(data.branches);
+    if (data.success) {
+      setBranches(data.branches);
+      setStoreSlug(data.store_slug ?? "");
+    }
     setLoading(false);
   }, []);
 
@@ -145,7 +159,12 @@ export default function BranchesPage() {
 
   function openEdit(branch: Branch) {
     setEditing(branch);
-    setForm({ name: branch.name, address: branch.address ?? "" });
+    setForm({
+      name: branch.name,
+      address: branch.address ?? "",
+      latitude: branch.latitude != null ? String(branch.latitude) : "",
+      longitude: branch.longitude != null ? String(branch.longitude) : "",
+    });
     setFormError("");
     setModalOpen(true);
   }
@@ -162,6 +181,17 @@ export default function BranchesPage() {
     setSaving(true);
     setFormError("");
 
+    const latVal = form.latitude.trim();
+    const lonVal = form.longitude.trim();
+    const lat = latVal !== "" ? parseFloat(latVal) : null;
+    const lon = lonVal !== "" ? parseFloat(lonVal) : null;
+
+    if ((latVal !== "" && isNaN(lat!)) || (lonVal !== "" && isNaN(lon!))) {
+      setFormError("Latitude and longitude must be valid numbers.");
+      setSaving(false);
+      return;
+    }
+
     const url = editing ? `/api/secured/branches/${editing.id}` : "/api/secured/branches";
     const method = editing ? "PUT" : "POST";
 
@@ -169,7 +199,12 @@ export default function BranchesPage() {
       method,
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ name: form.name, address: form.address }),
+      body: JSON.stringify({
+        name: form.name,
+        address: form.address,
+        latitude: lat,
+        longitude: lon,
+      }),
     });
     const data = await res.json();
 
@@ -259,6 +294,29 @@ export default function BranchesPage() {
     setDeleting(false);
   }
 
+  async function handleDownloadQR(branch: Branch) {
+    if (!storeSlug) return;
+    setQrLoading(branch.id);
+    try {
+      const url = `${window.location.origin}/s/${storeSlug}/b/${branch.slug}`;
+      const QRCode = (await import("qrcode")).default;
+      const dataUrl = await QRCode.toDataURL(url, {
+        width: 512,
+        margin: 2,
+        color: { dark: "#000000", light: "#ffffff" },
+      });
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = `${branch.slug}-qr.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      // silent — user will notice nothing downloaded
+    }
+    setQrLoading(null);
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -302,6 +360,7 @@ export default function BranchesPage() {
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Name</th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Slug</th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Address</th>
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">GPS</th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Status</th>
                 <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Actions</th>
               </tr>
@@ -312,6 +371,15 @@ export default function BranchesPage() {
                   <td className="px-5 py-3 font-medium text-slate-900">{branch.name}</td>
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{branch.slug}</td>
                   <td className="px-5 py-3 text-slate-600">{branch.address || <span className="text-slate-300">—</span>}</td>
+                  <td className="px-5 py-3 font-mono text-xs text-slate-500">
+                    {branch.latitude != null && branch.longitude != null ? (
+                      <span title={`${branch.latitude}, ${branch.longitude}`}>
+                        {branch.latitude.toFixed(4)}, {branch.longitude.toFixed(4)}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3">
                     <span
                       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
@@ -340,6 +408,19 @@ export default function BranchesPage() {
                         title="Kiosk settings"
                       >
                         <Monitor className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadQR(branch)}
+                        disabled={qrLoading === branch.id || !storeSlug}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-emerald-600 disabled:opacity-40"
+                        title="Download QR code"
+                      >
+                        {qrLoading === branch.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <QrCode className="h-4 w-4" />
+                        )}
                       </button>
                       <button
                         type="button"
@@ -372,7 +453,7 @@ export default function BranchesPage() {
 
       {/* Create / Edit modal */}
       {modalOpen && (
-        <Modal title={editing ? "Edit branch" : "Add branch"} onClose={closeModal}>
+        <Modal title={editing ? "Edit branch" : "Add branch"} onClose={closeModal} wide>
           <form onSubmit={handleSave} className="space-y-4">
             {formError && (
               <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{formError}</p>
@@ -397,6 +478,38 @@ export default function BranchesPage() {
                 rows={2}
                 className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
               />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">GPS coordinates</label>
+              <p className="text-xs text-slate-400">Used by the mobile app to auto-detect this branch when a customer is nearby.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-500">Latitude</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="-90"
+                    max="90"
+                    value={form.latitude}
+                    onChange={(e) => setForm((f) => ({ ...f, latitude: e.target.value }))}
+                    placeholder="e.g. 12.9352"
+                    className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm font-mono text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-500">Longitude</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="-180"
+                    max="180"
+                    value={form.longitude}
+                    onChange={(e) => setForm((f) => ({ ...f, longitude: e.target.value }))}
+                    placeholder="e.g. 77.6245"
+                    className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm font-mono text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                  />
+                </div>
+              </div>
             </div>
             <div className="flex justify-end gap-3 pt-1">
               <button

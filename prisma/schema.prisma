@@ -32,6 +32,8 @@ model Branch {
   name       String
   slug       String
   address    String?
+  latitude   Float?
+  longitude  Float?
   is_active  Boolean  @default(true)
   created_on DateTime @default(now())
 
