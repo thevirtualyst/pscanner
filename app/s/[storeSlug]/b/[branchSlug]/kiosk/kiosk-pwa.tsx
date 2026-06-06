@@ -296,6 +296,60 @@ function ProductCard({ product, onDismiss, countdown }: {
   );
 }
 
+// ─── Video helpers ────────────────────────────────────────────────────────────
+
+function getYouTubeId(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes("youtube.com")) return u.searchParams.get("v");
+    if (u.hostname === "youtu.be") return u.pathname.slice(1);
+  } catch {}
+  return null;
+}
+
+// Renders a looping, muted, autoplay video.
+// Accepts YouTube watch URLs or direct mp4 URLs.
+// className is applied to the wrapper div.
+function VideoPlayer({ url, className }: { url: string; className?: string }) {
+  const ytId = getYouTubeId(url);
+
+  if (ytId) {
+    const src =
+      `https://www.youtube.com/embed/${ytId}` +
+      `?autoplay=1&mute=1&loop=1&playlist=${ytId}` +
+      `&controls=0&rel=0&modestbranding=1&fs=0&disablekb=1&iv_load_policy=3`;
+    return (
+      <div className={className} style={{ overflow: "hidden" }}>
+        {/* Scale-up trick so YouTube iframe fills the container edge-to-edge */}
+        <iframe
+          src={src}
+          allow="autoplay; encrypted-media"
+          allowFullScreen={false}
+          style={{
+            position: "absolute",
+            top: "50%", left: "50%",
+            width: "177.78vh",   /* 16/9 × 100vh */
+            height: "56.25vw",  /* 9/16 × 100vw */
+            minWidth: "100%", minHeight: "100%",
+            transform: "translate(-50%, -50%)",
+            border: "none",
+            pointerEvents: "none",
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <video
+      src={url}
+      autoPlay loop muted playsInline
+      className={className}
+      style={{ objectFit: "cover" }}
+    />
+  );
+}
+
 // ─── Idle screen ──────────────────────────────────────────────────────────────
 
 type KioskConfig = {
@@ -307,9 +361,41 @@ type KioskConfig = {
   accentColor: string | null | undefined;
 };
 
-function IdleScreen({ storeName, branchName, config, onInstall, canInstall }: {
+// ─── Display mode screen (full-screen attract video) ──────────────────────────
+
+function DisplayModeScreen({ videoUrl, onExit }: { videoUrl: string; onExit: () => void }) {
+  const tapCount = useRef(0);
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  function handleSecretTap() {
+    tapCount.current += 1;
+    clearTimeout(tapTimer.current);
+    if (tapCount.current >= 5) {
+      tapCount.current = 0;
+      onExit();
+      return;
+    }
+    tapTimer.current = setTimeout(() => { tapCount.current = 0; }, 3000);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black">
+      <VideoPlayer url={videoUrl} className="absolute inset-0 h-full w-full" />
+      {/* Invisible 80×80 tap zone — top-right corner — 5 taps to exit */}
+      <button
+        type="button"
+        aria-hidden="true"
+        onClick={handleSecretTap}
+        className="absolute right-0 top-0 h-20 w-20"
+        style={{ background: "transparent", border: "none" }}
+      />
+    </div>
+  );
+}
+
+function IdleScreen({ storeName, branchName, config, onInstall, canInstall, onStartDisplay }: {
   storeName: string; branchName: string; config: KioskConfig;
-  canInstall: boolean; onInstall: () => void;
+  canInstall: boolean; onInstall: () => void; onStartDisplay: () => void;
 }) {
   const accent  = config.accentColor || "#2563eb";
   const headline = config.headline   || storeName;
@@ -320,11 +406,7 @@ function IdleScreen({ storeName, branchName, config, onInstall, canInstall }: {
     <div className="relative flex min-h-screen flex-col items-center justify-center px-4 select-none overflow-hidden bg-slate-900">
       {/* Background video */}
       {config.videoUrl && (
-        <video
-          src={config.videoUrl}
-          autoPlay loop muted playsInline
-          className="absolute inset-0 h-full w-full object-cover opacity-40"
-        />
+        <VideoPlayer url={config.videoUrl} className="absolute inset-0 h-full w-full opacity-40" />
       )}
 
       {/* Overlay gradient so text is always readable */}
@@ -365,6 +447,15 @@ function IdleScreen({ storeName, branchName, config, onInstall, canInstall }: {
             className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm text-white/70 backdrop-blur-sm hover:bg-white/20 transition">
             <Download className="h-4 w-4" />
             Install as app
+          </button>
+        )}
+
+        {/* Start display mode — only when video is configured and app is installed */}
+        {!canInstall && config.videoUrl && (
+          <button type="button" onClick={onStartDisplay}
+            className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm text-white/70 backdrop-blur-sm hover:bg-white/20 transition">
+            <Play className="h-4 w-4" />
+            Start display mode
           </button>
         )}
       </div>
@@ -426,14 +517,15 @@ function DebugPanel({ log, onClear }: { log: string[]; onClear: () => void }) {
 export default function KioskPWA({ branchId, branchName, storeName, kioskConfig }: {
   branchId: string; branchName: string; storeName: string; kioskConfig: KioskConfig;
 }) {
-  const [product, setProduct]   = useState<ScannedProduct | null>(null);
-  const [scanning, setScanning] = useState(false);
-  const [notFound, setNotFound] = useState(false);
-  const [apiError, setApiError] = useState("");
-  const [countdown, setCountdown] = useState(AUTO_RESET_SECONDS);
+  const [product, setProduct]       = useState<ScannedProduct | null>(null);
+  const [scanning, setScanning]     = useState(false);
+  const [notFound, setNotFound]     = useState(false);
+  const [apiError, setApiError]     = useState("");
+  const [countdown, setCountdown]   = useState(AUTO_RESET_SECONDS);
   const [canInstall, setCanInstall] = useState(false);
-  const [debugLog, setDebugLog] = useState<string[]>([]);
-  const [debugMode, setDebugMode] = useState(false);
+  const [debugLog, setDebugLog]     = useState<string[]>([]);
+  const [debugMode, setDebugMode]   = useState(false);
+  const [displayMode, setDisplayMode] = useState(false);
 
   useEffect(() => {
     setDebugMode(new URLSearchParams(window.location.search).has("debug"));
@@ -454,6 +546,7 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
       hiddenInputRef.current.value = "";
       hiddenInputRef.current.focus();
     }
+    // displayMode intentionally NOT reset here — stays in display mode after each scan
   }
 
   const fetchProduct = useCallback(async (barcode: string) => {
@@ -666,11 +759,22 @@ export default function KioskPWA({ branchId, branchName, storeName, kioskConfig 
         </div>
       )}
 
-      {showIdle && (
+      {showIdle && !displayMode && (
         <>
-          <IdleScreen storeName={storeName} branchName={branchName} config={kioskConfig} canInstall={canInstall} onInstall={handleInstall} />
+          <IdleScreen
+            storeName={storeName} branchName={branchName} config={kioskConfig}
+            canInstall={canInstall} onInstall={handleInstall}
+            onStartDisplay={() => setDisplayMode(true)}
+          />
           {debugMode && <DebugPanel log={debugLog} onClear={() => setDebugLog([])} />}
         </>
+      )}
+
+      {showIdle && displayMode && kioskConfig.videoUrl && (
+        <DisplayModeScreen
+          videoUrl={kioskConfig.videoUrl}
+          onExit={() => setDisplayMode(false)}
+        />
       )}
     </>
   );
